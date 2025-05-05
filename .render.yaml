@@ -1,0 +1,7 @@
+jobs:
+  - name: crypto-beam-signal-bot
+    type: cron
+    schedule: "*/15 * * * *"
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python app.py"
+    runtime: python
