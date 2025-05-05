@@ -1,3 +1,4 @@
+from flask import Flask
 import ccxt
 import pandas as pd
 import numpy as np
@@ -7,12 +8,9 @@ from ta.momentum import RSIIndicator
 from ta.volatility import AverageTrueRange
 from datetime import datetime
 
-# === CONFIG ===
-EXCHANGE = ccxt.binance()
-SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'TON/USDT', 'ADA/USDT']
-LIMIT = 100
+app = Flask(__name__)
 
-# === TELEGRAM ===
+# === TELEGRAM CONFIG ===
 TELEGRAM_TOKEN = 'your_bot_token'
 TELEGRAM_CHAT_ID = 'your_chat_id'
 
@@ -24,7 +22,11 @@ def send_telegram_message(message):
     except Exception as e:
         print(f"Telegram error: {e}")
 
-# === FETCH DATA ===
+# === CONFIG ===
+EXCHANGE = ccxt.binance()
+SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'TON/USDT', 'ADA/USDT']
+LIMIT = 100
+
 def fetch_data(symbol, timeframe):
     try:
         ohlcv = EXCHANGE.fetch_ohlcv(symbol, timeframe=timeframe, limit=LIMIT)
@@ -34,7 +36,6 @@ def fetch_data(symbol, timeframe):
     except:
         return None
 
-# === APPLY INDICATORS ===
 def apply_indicators(df):
     df['EMA20'] = EMAIndicator(df['close'], window=20).ema_indicator()
     df['EMA200'] = EMAIndicator(df['close'], window=200, fillna=True).ema_indicator()
@@ -46,7 +47,6 @@ def apply_indicators(df):
     df['ATR'] = atr.average_true_range()
     return df
 
-# === EVALUATE SIGNAL ===
 def evaluate_signal(df_15m, df_1h, symbol):
     latest = df_15m.iloc[-1]
     trend_ok = latest['close'] > latest['EMA200']
@@ -89,19 +89,16 @@ def evaluate_signal(df_15m, df_1h, symbol):
         'time': datetime.utcnow().strftime('%H:%M:%S')
     }
 
-# === MAIN LOGIC ===
 def run_bot():
+    messages = []
     for symbol in SYMBOLS:
         df_15m = fetch_data(symbol, '15m')
         df_1h = fetch_data(symbol, '1h')
         if df_15m is None or df_1h is None:
             continue
-
         df_15m = apply_indicators(df_15m)
         df_1h = apply_indicators(df_1h)
-
         signal = evaluate_signal(df_15m, df_1h, symbol)
-
         if signal:
             msg = (
                 f"{signal['symbol']} ({signal['type']})\n"
@@ -109,9 +106,20 @@ def run_bot():
                 f"TP: {signal['tp']:.2f} | SL: {signal['sl']:.2f}\n"
                 f"Time: {signal['time']}"
             )
-            print(msg)
+            messages.append(msg)
             send_telegram_message(msg)
+    return messages
 
-# === ENTRY POINT ===
+@app.route("/")
+def home():
+    return "Bot is running."
+
+@app.route("/run")
+def trigger_bot():
+    results = run_bot()
+    if results:
+        return "<br>".join(results)
+    return "No new signals."
+
 if __name__ == "__main__":
-    run_bot()
+    app.run(host="0.0.0.0", port=10000)
